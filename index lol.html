@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام تسجيل حصص المدرسين</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap');
+        body { font-family: 'Tajawal', sans-serif; background-color: #f3f4f6; }
+        .tab-active { border-bottom: 2px solid #3b82f6; color: #3b82f6; font-weight: bold; }
+        .tab-inactive { color: #6b7280; }
+        
+        /* Loader */
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            display: none;
+            margin: 0 auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm sticky top-0 z-10">
+        <div class="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+            <h1 class="text-2xl font-bold text-blue-600"><i class="fas fa-chalkboard-teacher ml-2"></i> إدارة الحصص</h1>
+        </div>
+        
+        <!-- Navigation Tabs -->
+        <div class="max-w-4xl mx-auto px-4 flex border-b">
+            <button onclick="switchTab('record')" id="tab-record" class="py-3 px-6 tab-active transition-colors duration-200">
+                <i class="fas fa-plus-circle ml-1"></i> تسجيل حصة
+            </button>
+            <button onclick="switchTab('history')" id="tab-history" class="py-3 px-6 tab-inactive transition-colors duration-200">
+                <i class="fas fa-list-alt ml-1"></i> سجل الحصص المجمع
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="max-w-4xl mx-auto px-4 py-8">
+        
+        <!-- إشعار الرسائل -->
+        <div id="toast" class="hidden w-full max-w-sm bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4 shadow-sm" role="alert">
+            <span class="block sm:inline" id="toast-message">تم تسجيل الحصة بنجاح!</span>
+        </div>
+
+        <!-- Section: Record Class -->
+        <section id="sec-record" class="bg-white rounded-xl shadow-md p-6 max-w-md mx-auto">
+            <h2 class="text-xl font-bold mb-6 text-gray-700">تسجيل حصة جديدة</h2>
+            <form id="recordForm" onsubmit="submitForm(event)">
+                <div class="mb-4">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="teacher">
+                        اسم المدرس
+                    </label>
+                    <select id="teacher" required class="shadow border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
+                        <option value="" disabled selected>جاري التحميل...</option>
+                        <!-- سيتم تحميل الأسماء هنا -->
+                    </select>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="minutes">
+                        مدة الحصة (بالدقائق)
+                    </label>
+                    <input type="number" id="minutes" step="1" min="1" required placeholder="مثال: 45 أو 90" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <div class="flex items-center justify-between">
+                    <button id="submitBtn" type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded focus:outline-none focus:shadow-outline transition duration-200">
+                        حفظ السجل
+                    </button>
+                </div>
+                <div id="formLoader" class="loader mt-4"></div>
+            </form>
+        </section>
+
+        <!-- Section: History and Grouping -->
+        <section id="sec-history" class="hidden">
+            <div class="bg-white rounded-xl shadow-md p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-700">سجل الحصص المجمع</h2>
+                    <button onclick="loadLogs()" class="text-blue-500 hover:text-blue-700">
+                        <i class="fas fa-sync-alt"></i> تحديث
+                    </button>
+                </div>
+
+                <div id="historyLoader" class="loader mb-4"></div>
+                
+                <!-- سيتم عرض البيانات المجمعة هنا -->
+                <div id="logsContainer" class="space-y-6">
+                    <p class="text-center text-gray-500 py-4">جاري تحميل البيانات...</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // ==========================================
+        // هام جداً: ضع رابط الـ Web App الخاص بك هنا
+        // ==========================================
+        const API_URL = "https://script.google.com/macros/s/AKfycbxx8EvI7tQYcQ-zMfgk-6dqxEzXfscDvTulO53-aDP9FJKk3xzugmDllYFl_tAeAfe6lA/exec"; 
+
+        // بيانات تجريبية (Mock Data) للعمل بدون الرابط حتى تقوم بضبطه
+        let mockTeachers = ["أحمد محمود", "مريم علي", "محمود كمال"];
+        let mockLogs = [
+            {teacher: "أحمد محمود", hours: 2, date: "2023-10-25"},
+            {teacher: "أحمد محمود", hours: 1.5, date: "2023-10-26"},
+            {teacher: "مريم علي", hours: 3, date: "2023-10-25"},
+            {teacher: "مريم علي", hours: 2, date: "2023-10-26"},
+            {teacher: "مريم علي", hours: 1, date: "2023-10-27"}
+        ];
+
+        // التبديل بين التبويبات
+        function switchTab(tabId) {
+            document.getElementById('sec-record').classList.add('hidden');
+            document.getElementById('sec-history').classList.add('hidden');
+            document.getElementById('tab-record').className = 'py-3 px-6 tab-inactive transition-colors duration-200';
+            document.getElementById('tab-history').className = 'py-3 px-6 tab-inactive transition-colors duration-200';
+
+            document.getElementById('sec-' + tabId).classList.remove('hidden');
+            document.getElementById('tab-' + tabId).className = 'py-3 px-6 tab-active transition-colors duration-200';
+
+            if(tabId === 'history') {
+                loadLogs();
+            }
+        }
+
+        // جلب أسماء المدرسين من الشيت
+        async function loadTeachers() {
+            const select = document.getElementById('teacher');
+            if (API_URL === "ضع_رابط_APPS_SCRIPT_هنا") {
+                populateTeachersList(mockTeachers);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_URL + "?action=getTeachers");
+                const teachers = await response.json();
+                populateTeachersList(teachers);
+            } catch (error) {
+                console.error("Error loading teachers:", error);
+                select.innerHTML = '<option value="">حدث خطأ في جلب الأسماء</option>';
+            }
+        }
+
+        function populateTeachersList(teachers) {
+            const select = document.getElementById('teacher');
+            select.innerHTML = '<option value="" disabled selected>اختر المدرس...</option>';
+            teachers.forEach(t => {
+                let opt = document.createElement('option');
+                opt.value = t;
+                opt.innerHTML = t;
+                select.appendChild(opt);
+            });
+        }
+
+        // إرسال الحصة للشيت
+        async function submitForm(e) {
+            e.preventDefault();
+            const teacher = document.getElementById('teacher').value;
+            const minutes = parseInt(document.getElementById('minutes').value);
+            
+            const btn = document.getElementById('submitBtn');
+            const loader = document.getElementById('formLoader');
+            
+            btn.style.display = 'none';
+            loader.style.display = 'block';
+
+            if (API_URL === "ضع_رابط_APPS_SCRIPT_هنا") {
+                // محاكاة الإرسال
+                setTimeout(() => {
+                    const hours = (minutes / 60).toFixed(2);
+                    mockLogs.push({teacher: teacher, hours: hours, date: new Date().toISOString().split('T')[0]});
+                    finishSubmit();
+                }, 1000);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    body: JSON.stringify({ teacher, minutes })
+                });
+                const result = await response.json();
+                if(result.status === 'success') {
+                    finishSubmit();
+                }
+            } catch (error) {
+                alert("حدث خطأ أثناء حفظ البيانات.");
+                btn.style.display = 'block';
+                loader.style.display = 'none';
+            }
+        }
+
+        function finishSubmit() {
+            document.getElementById('minutes').value = '';
+            document.getElementById('teacher').value = '';
+            
+            document.getElementById('submitBtn').style.display = 'block';
+            document.getElementById('formLoader').style.display = 'none';
+            
+            const toast = document.getElementById('toast');
+            toast.classList.remove('hidden');
+            setTimeout(() => { toast.classList.add('hidden'); }, 3000);
+        }
+
+        // جلب وتجميع وعرض السجلات
+        async function loadLogs() {
+            const container = document.getElementById('logsContainer');
+            const loader = document.getElementById('historyLoader');
+            
+            container.innerHTML = '';
+            loader.style.display = 'block';
+
+            let dataToProcess = [];
+
+            if (API_URL === "ضع_رابط_APPS_SCRIPT_هنا") {
+                dataToProcess = mockLogs;
+                setTimeout(() => renderGroupedLogs(dataToProcess), 800);
+                return;
+            }
+
+            try {
+                const response = await fetch(API_URL + "?action=getLogs");
+                dataToProcess = await response.json();
+                renderGroupedLogs(dataToProcess);
+            } catch (error) {
+                console.error("Error loading logs:", error);
+                container.innerHTML = '<p class="text-red-500">حدث خطأ في تحميل السجلات.</p>';
+                loader.style.display = 'none';
+            }
+        }
+
+        function renderGroupedLogs(logs) {
+            const container = document.getElementById('logsContainer');
+            document.getElementById('historyLoader').style.display = 'none';
+
+            if(logs.length === 0) {
+                container.innerHTML = '<p class="text-center text-gray-500 py-4">لا توجد حصص مسجلة بعد.</p>';
+                return;
+            }
+
+            // تجميع البيانات بناءً على طلبك
+            const grouped = {};
+            logs.forEach(log => {
+                if(!grouped[log.teacher]) {
+                    grouped[log.teacher] = { classes: [], totalHours: 0 };
+                }
+                grouped[log.teacher].classes.push(log);
+                grouped[log.teacher].totalHours += parseFloat(log.hours);
+            });
+
+            // إنشاء العرض (HTML) لكل مدرس
+            for (const [teacherName, data] of Object.entries(grouped)) {
+                
+                let classesHtml = '';
+                data.classes.forEach(c => {
+                    const h = parseFloat(c.hours);
+                    const m = Math.round(h * 60);
+                    classesHtml += `
+                        <div class="flex justify-between items-center py-2 border-b border-gray-100 last:border-0">
+                            <span class="text-sm text-gray-500"><i class="far fa-calendar-alt ml-1"></i> ${c.date}</span>
+                            <span class="text-sm font-semibold bg-blue-50 text-blue-700 px-2 py-1 rounded">${m} دقيقة (${h} ساعة)</span>
+                        </div>
+                    `;
+                });
+
+                const card = `
+                    <div class="border rounded-lg overflow-hidden border-gray-200">
+                        <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
+                            <h3 class="font-bold text-lg text-gray-800"><i class="fas fa-user-circle text-gray-400 ml-2"></i>${teacherName}</h3>
+                            <div class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-bold">
+                                إجمالي: ${data.classes.length} حصص | ${(data.totalHours).toFixed(2)} ساعة
+                            </div>
+                        </div>
+                        <div class="px-4 py-2">
+                            ${classesHtml}
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += card;
+            }
+        }
+
+        // تشغيل الوظائف عند فتح الصفحة
+        window.onload = () => {
+            loadTeachers();
+        };
+    </script>
+</body>
+</html>
